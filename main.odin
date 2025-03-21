@@ -50,12 +50,18 @@ Game :: struct {
 
 game: Game
 
+background: rl.Shader
+postpro_shader: rl.Shader
+target : rl.RenderTexture2D
 
 // Methods
 
 main :: proc() {
         rl.InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Snake")
-        defer rl.CloseWindow()
+
+        background = rl.LoadShader("", "shaders/checkboard.fs");
+        postpro_shader = rl.LoadShader("", "shaders/vhs.fs");
+        target = rl.LoadRenderTexture(SCREEN_WIDTH, SCREEN_HEIGHT);
 
         init_game()
 
@@ -64,14 +70,25 @@ main :: proc() {
         tick_rate := 150 * time.Millisecond
         last_tick := time.now()
 
+        // time_loc := rl.GetShaderLocation(postpro_shader, "time")
+
+        // Main game loop
         for !rl.WindowShouldClose() {   // Detect window close button or ESC key
                 handle_key()
                 if time.since(last_tick) > tick_rate && !game.game_over && !game.pause {
                         last_tick = time.now()
                         update_game()
                 }
+                // delta := time.now()
+                // rl.SetShaderValue(postpro_shader, rl.ShaderLocationIndex(time_loc), &delta, rl.ShaderUniformDataType.FLOAT)
+        
                 draw_game()
         }
+
+        rl.UnloadShader(background);
+        rl.UnloadShader(postpro_shader);
+        rl.UnloadRenderTexture(target);
+        rl.CloseWindow()
 }
 
 
@@ -79,6 +96,10 @@ init_game :: proc() {
         length: i32 = 3
 
         game = Game{{}, {}, 0, false, false}
+
+		game.score = 0
+		game.game_over = false
+		game.pause = false
 
         for i in 0 ..< length {
                 append(
@@ -159,69 +180,88 @@ update_game :: proc() {
 }
 
 draw_game :: proc() {
-        rl.BeginDrawing()
-        defer rl.EndDrawing()
+        rl.BeginTextureMode(target); // Enable drawing to texture
+                rl.ClearBackground(rl.BLANK)// Clear texture background
 
-        rl.ClearBackground(rl.RAYWHITE)
+                rl.BeginShaderMode(background);
+                        rl.DrawRectangle(0, 0, SCREEN_WIDTH, SCREEN_WIDTH, rl.WHITE); // Full-screen rectangle
+                rl.EndShaderMode();
 
-        rl.DrawLine(BORDER, BORDER, SCREEN_WIDTH - BORDER, BORDER, rl.LIGHTGRAY)
-        rl.DrawLine(
-                BORDER,
-                SCREEN_HEIGHT - BORDER,
-                SCREEN_WIDTH - BORDER,
-                SCREEN_HEIGHT - BORDER,
-                rl.LIGHTGRAY,
-        )
-        rl.DrawLine(BORDER, BORDER, BORDER, SCREEN_HEIGHT - BORDER, rl.LIGHTGRAY)
-        rl.DrawLine(
-                SCREEN_WIDTH - BORDER,
-                BORDER,
-                SCREEN_WIDTH - BORDER,
-                SCREEN_HEIGHT - BORDER,
-                rl.LIGHTGRAY,
-        )
+                rl.DrawText("@florianvazelle", SCREEN_WIDTH - 200, SCREEN_HEIGHT - 20, 26, rl.WHITE);
 
-        if game.game_over {
-                text :: "PRESS [ENTER] TO PLAY AGAIN"
-                rl.DrawText(
-                        text,
-                        rl.GetScreenWidth() / 2 - rl.MeasureText(text, 20) / 2,
-                        rl.GetScreenHeight() / 2 - 50,
-                        20,
-                        rl.GRAY,
+                rl.DrawLine(BORDER, BORDER, SCREEN_WIDTH - BORDER, BORDER, rl.WHITE)
+                rl.DrawLine(
+                        BORDER,
+                        SCREEN_HEIGHT - BORDER,
+                        SCREEN_WIDTH - BORDER,
+                        SCREEN_HEIGHT - BORDER,
+                        rl.WHITE,
                 )
-                return
-        }
+                rl.DrawLine(BORDER, BORDER, BORDER, SCREEN_HEIGHT - BORDER, rl.WHITE)
+                rl.DrawLine(
+                        SCREEN_WIDTH - BORDER,
+                        BORDER,
+                        SCREEN_WIDTH - BORDER,
+                        SCREEN_HEIGHT - BORDER,
+                        rl.WHITE,
+                )
 
-        for item in game.items {
-                if item.type == .Apple {
-                        rl.DrawRectangle(item.pos[0], item.pos[1], SQUARE_SIZE, SQUARE_SIZE, rl.RED)
+                if game.game_over {
+                        text :: "PRESS [ENTER] TO PLAY AGAIN"
+                        rl.DrawText(
+                                text,
+                                rl.GetScreenWidth() / 2 - rl.MeasureText(text, 20) / 2,
+                                rl.GetScreenHeight() / 2 - 50,
+                                40,
+                                rl.WHITE,
+                        )
+                } else {
+                        for item in game.items {
+                                if item.type == .Apple {
+                                        rl.DrawRectangle(item.pos[0], item.pos[1], SQUARE_SIZE, SQUARE_SIZE, rl.RED)
+                                }
+                        }
+
+                        for body in game.snake.bodies {
+                                rl.DrawRectangle(body.pos[0], body.pos[1], SQUARE_SIZE, SQUARE_SIZE, rl.GREEN)
+                        }
+
+                        if game.pause {
+                                text :: "GAME PAUSED"
+                                rl.DrawText(
+                                        text,
+                                        SCREEN_WIDTH / 2 - rl.MeasureText(text, 40) / 2,
+                                        SCREEN_WIDTH / 2 - 40,
+                                        40,
+                                        rl.WHITE,
+                                )
+                        }
+
+                        rl.DrawText(
+                                rl.TextFormat("SCORE %d", game.score),
+                                SQUARE_SIZE,
+                                SQUARE_SIZE,
+                                26,
+                                rl.WHITE,
+                        )
+
                 }
-        }
 
-        for body in game.snake.bodies {
-                rl.DrawRectangle(body.pos[0], body.pos[1], SQUARE_SIZE, SQUARE_SIZE, rl.GREEN)
-        }
+        rl.EndTextureMode();             // End drawing to texture (now we have a texture available for next passes)
+        
+        //----------------------------------------------------------------------------------
 
-        if game.pause {
-                text :: "GAME PAUSED"
-                rl.DrawText(
-                        text,
-                        SCREEN_WIDTH / 2 - rl.MeasureText(text, 40) / 2,
-                        SCREEN_WIDTH / 2 - 40,
-                        40,
-                        rl.GRAY,
-                )
-                return
-        }
+        rl.BeginDrawing()
+                rl.ClearBackground(rl.RAYWHITE)// Clear texture background
 
-        rl.DrawText(
-                rl.TextFormat("SCORE %d", game.score),
-                SQUARE_SIZE,
-                SQUARE_SIZE,
-                SQUARE_SIZE * 2,
-                rl.GRAY,
-        )
+                // Render generated texture using selected postprocessing shader
+                rl.BeginShaderMode(postpro_shader);
+                        // NOTE: Render texture must be y-flipped due to default OpenGL coordinates (left-bottom)
+                        rl.DrawTextureRec(target.texture, { 0, 0, cast(f32)target.texture.width,  cast(f32)-target.texture.height }, { 0, 0 }, rl.WHITE);
+                rl.EndShaderMode();
+
+        rl.EndDrawing()
+
 }
 
 
